@@ -29,6 +29,9 @@ final class SettingsManager: ObservableObject {
     // Refresh interval in seconds
     @Published var refreshInterval: Double = 1.0 { didSet { save() } }
 
+    // Stay Awake (Caffeine) — persisted so it restores on relaunch
+    @Published var stayAwake: Bool = false { didSet { save() } }
+
     enum MenuBarStyle: String, Codable, CaseIterable {
         case icon = "icon"
         case text = "text"
@@ -61,6 +64,7 @@ final class SettingsManager: ObservableObject {
         var menuBarStyle: MenuBarStyle?
         var showDockIcon: Bool?
         var refreshInterval: Double?
+        var stayAwake: Bool?
     }
 
     private func load() {
@@ -76,6 +80,7 @@ final class SettingsManager: ObservableObject {
             if let v = decoded.menuBarStyle { menuBarStyle = v }
             if let v = decoded.showDockIcon { showDockIcon = v }
             if let v = decoded.refreshInterval { refreshInterval = v }
+            if let v = decoded.stayAwake { stayAwake = v }
         } catch {
             print("⚠️  Failed to load settings: \(error)")
         }
@@ -90,7 +95,8 @@ final class SettingsManager: ObservableObject {
             showCaffeineInMenuBar: showCaffeineInMenuBar,
             menuBarStyle: menuBarStyle,
             showDockIcon: showDockIcon,
-            refreshInterval: refreshInterval
+            refreshInterval: refreshInterval,
+            stayAwake: stayAwake
         )
         do {
             try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)

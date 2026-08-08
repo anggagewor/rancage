@@ -6,7 +6,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var timer: Timer?
     private var mainWindow: NSWindow?
 
+    private let menuBarRenderer = MenuBarRenderer()
+    private lazy var menuBuilder = MenuBuilder(target: self)
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Setup global menu bar
+        setupMainMenu()
+
         // Setup SMC
         do {
             try SMCKit.shared.open()
@@ -20,38 +26,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Warm up CPU delta
         _ = SystemMonitor.shared.cpuUsage()
 
+        // Restore caffeine state (triggers init which reads settings)
+        _ = CaffeineManager.shared
+
         // Start periodic refresh
         updateReadings()
         startTimer()
-
-        rebuildMenu()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
-        CaffeineManager.shared.deactivate()
+        _ = CaffeineManager.shared.deactivate()
         HistoryStore.shared.save()
         SMCKit.shared.close()
     }
 
-    // CRITICAL: prevent app from quitting when window is closed
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
 
-    // Re-opened from Dock click
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showMainWindow()
         return true
     }
 
-    // NSWindowDelegate: hide window instead of destroying
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
         return false
     }
 
-    // MARK: - Timer Management
+    // MARK: - Timer
 
     func startTimer() {
         timer?.invalidate()
@@ -65,201 +69,45 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         startTimer()
     }
 
-    /// Called when caffeine state changes to immediately refresh menu bar
     func refreshMenuBar() {
-        updateStatusBarTitle()
-        rebuildMenu()
+        updateStatusBar()
+        statusItem.menu = menuBuilder.build()
     }
 
     // MARK: - Update Loop
 
     private func updateReadings() {
         MonitorState.shared.refresh()
-        updateStatusBarTitle()
-        rebuildMenu()
+        // Give background queue a moment, then update UI
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.updateStatusBar()
+            self?.statusItem.menu = self?.menuBuilder.build()
+        }
     }
 
-    // MARK: - Status Bar Rendering
+    private func updateStatusBar() {
+        let parts = menuBarRenderer.buildParts()
+        let style = SettingsManager.shared.menuBarStyle
 
-    /// Renders entire status bar content as a single template NSImage.
-    /// This ensures proper dark/light mode adaptation — NSTextAttachment does NOT
-    /// respect isTemplate, so we draw everything into one image instead.
-    private func updateStatusBarTitle() {
-        let state = MonitorState.shared
-        let settings = SettingsManager.shared
-        let style = settings.menuBarStyle
-        let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
-        let iconSize: CGFloat = 14
-        let spacing: CGFloat = 3
-        let sectionSpacing: CGFloat = 8
-
-        // Build parts: each part is (icon?, text?)
-        // Text uses fixed-width format to prevent shifting
-        var parts: [(icon: MenuBarIcon?, text: String?)] = []
-
-        if settings.showFanInMenuBar, let fan = state.fanSpeeds.first {
-            // 4 chars: "1234" or " 800"
-            parts.append((icon: .fan, text: String(format: "%4.0f", fan.rpm)))
-        }
-        if settings.showCPUTempInMenuBar && state.cpuTemp > 0 {
-            // 3 chars + °: " 69°" or "100°"
-            parts.append((icon: .thermometer, text: String(format: "%3.0f°", state.cpuTemp)))
-        }
-        if settings.showCPUInMenuBar {
-            // 3 chars + %: "  5%" or "100%"
-            parts.append((icon: .cpu, text: String(format: "%3.0f%%", state.cpuPercent)))
-        }
-        if settings.showRAMInMenuBar {
-            // 3 chars + %: " 42%" or "100%"
-            parts.append((icon: .memory, text: String(format: "%3.0f%%", state.memPercent)))
-        }
-        if settings.showCaffeineInMenuBar && CaffeineManager.shared.isActive {
-            parts.append((icon: .caffeine, text: nil))
-        }
-
-        guard !parts.isEmpty else {
+        if let img = menuBarRenderer.render(parts: parts, style: style) {
+            statusItem.button?.image = img
+            statusItem.button?.title = ""
+            statusItem.button?.attributedTitle = NSAttributedString()
+        } else {
+            // Fallback
             let fallback = MenuBarIcon.cpu.image
-            fallback.size = NSSize(width: iconSize, height: iconSize)
+            fallback.size = NSSize(width: 14, height: 14)
             statusItem.button?.image = fallback
             statusItem.button?.title = ""
-            statusItem.length = NSStatusItem.variableLength
-            return
         }
-
-        // Calculate total width
-        let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        var totalWidth: CGFloat = 0
-
-        for (index, part) in parts.enumerated() {
-            if index > 0 { totalWidth += sectionSpacing }
-
-            let showIcon = (style == .icon || style == .both) && part.icon != nil
-            let showText = (style == .text || style == .both) && part.text != nil
-
-            if showIcon { totalWidth += iconSize }
-            if showIcon && showText { totalWidth += spacing }
-            if showText, let text = part.text {
-                totalWidth += (text as NSString).size(withAttributes: attrs).width
-            }
-            // icon-only with no text and no icon (caffeine with text style)
-            if !showIcon && !showText && part.icon != nil {
-                totalWidth += iconSize // always show icon for caffeine
-            }
-        }
-
-        let height: CGFloat = 18
-        let imgSize = NSSize(width: ceil(totalWidth), height: height)
-
-        let img = NSImage(size: imgSize, flipped: false) { rect in
-            var x: CGFloat = 0
-
-            for (index, part) in parts.enumerated() {
-                if index > 0 { x += sectionSpacing }
-
-                let showIcon = (style == .icon || style == .both) && part.icon != nil
-                let showText = (style == .text || style == .both) && part.text != nil
-                // Special: caffeine always shows as icon
-                let forceIcon = !showIcon && !showText && part.icon != nil
-
-                if showIcon || forceIcon {
-                    let iconImg = part.icon!.image
-                    let iconRect = NSRect(x: x, y: (height - iconSize) / 2, width: iconSize, height: iconSize)
-                    iconImg.draw(in: iconRect)
-                    x += iconSize
-                    if showText { x += spacing }
-                }
-                if showText, let text = part.text {
-                    let textSize = (text as NSString).size(withAttributes: attrs)
-                    let textY = (height - textSize.height) / 2
-                    (text as NSString).draw(at: NSPoint(x: x, y: textY), withAttributes: attrs)
-                    x += textSize.width
-                }
-            }
-            return true
-        }
-
-        img.isTemplate = true
-        statusItem.button?.image = img
-        statusItem.button?.title = ""
-        statusItem.button?.attributedTitle = NSAttributedString()
         statusItem.length = NSStatusItem.variableLength
     }
 
-    // MARK: - Menu
+    // MARK: - Actions (exposed for MenuBuilder selectors)
 
-    private func rebuildMenu() {
-        let menu = NSMenu()
-        let state = MonitorState.shared
-
-        // Header
-        let headerItem = NSMenuItem(title: "Rancage", action: nil, keyEquivalent: "")
-        headerItem.isEnabled = false
-        menu.addItem(headerItem)
-        menu.addItem(NSMenuItem.separator())
-
-        // CPU
-        let cpuItem = NSMenuItem(title: String(format: "CPU: %.1f%%", state.cpuPercent), action: nil, keyEquivalent: "")
-        cpuItem.image = MenuBarIcon.cpu.image
-        cpuItem.isEnabled = false
-        menu.addItem(cpuItem)
-
-        if state.cpuTemp > 0 {
-            let tempItem = NSMenuItem(title: String(format: "Temp: %.1f°C", state.cpuTemp), action: nil, keyEquivalent: "")
-            tempItem.image = MenuBarIcon.thermometer.image
-            tempItem.isEnabled = false
-            menu.addItem(tempItem)
-        }
-        menu.addItem(NSMenuItem.separator())
-
-        // Memory
-        let memItem = NSMenuItem(title: String(format: "RAM: %.1f%% (%.1f / %.1f GB)", state.memPercent, state.memUsedGB, state.memTotalGB), action: nil, keyEquivalent: "")
-        memItem.image = MenuBarIcon.memory.image
-        memItem.isEnabled = false
-        menu.addItem(memItem)
-        menu.addItem(NSMenuItem.separator())
-
-        // Fans
-        if !state.fanSpeeds.isEmpty {
-            for fan in state.fanSpeeds {
-                let label = state.fanSpeeds.count == 1 ? "Fan" : "Fan \(fan.index)"
-                let fanItem = NSMenuItem(title: String(format: "%@: %.0f RPM", label, fan.rpm), action: nil, keyEquivalent: "")
-                fanItem.image = MenuBarIcon.fan.image
-                fanItem.isEnabled = false
-                menu.addItem(fanItem)
-            }
-            menu.addItem(NSMenuItem.separator())
-        }
-
-        // Caffeine
-        let caffeineTitle = CaffeineManager.shared.isActive ? "Stay Awake: ON" : "Stay Awake: OFF"
-        let caffeineItem = NSMenuItem(title: caffeineTitle, action: #selector(toggleCaffeine), keyEquivalent: "c")
-        caffeineItem.image = CaffeineManager.shared.isActive ? MenuBarIcon.caffeine.image : MenuBarIcon.caffeineOff.image
-        caffeineItem.target = self
-        menu.addItem(caffeineItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        // Open window
-        let dashItem = NSMenuItem(title: "Open Rancage…", action: #selector(showMainWindow), keyEquivalent: "o")
-        dashItem.target = self
-        menu.addItem(dashItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        // Quit
-        let quitItem = NSMenuItem(title: "Quit Rancage", action: #selector(quitApp), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
-
-        statusItem.menu = menu
-    }
-
-    // MARK: - Actions
-
-    @objc private func toggleCaffeine() {
+    @objc func toggleCaffeineAction() {
         _ = CaffeineManager.shared.toggle()
-        updateStatusBarTitle()
-        rebuildMenu()
+        refreshMenuBar()
     }
 
     @objc func showMainWindow() {
@@ -288,7 +136,67 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         mainWindow = window
     }
 
-    @objc private func quitApp() {
+    @objc func quitApp() {
         NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: - Global Menu Bar
+
+    private func setupMainMenu() {
+        let mainMenu = NSMenu()
+
+        // App menu
+        let appMenu = NSMenu()
+        appMenu.addItem(NSMenuItem(title: "About Rancage", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(NSMenuItem(title: "Settings…", action: #selector(showMainWindow), keyEquivalent: ","))
+        appMenu.addItem(NSMenuItem.separator())
+        let hideItem = NSMenuItem(title: "Hide Rancage", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(hideItem)
+        let hideOthersItem = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthersItem.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(hideOthersItem)
+        appMenu.addItem(NSMenuItem(title: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(NSMenuItem(title: "Quit Rancage", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+
+        let appMenuItem = NSMenuItem()
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        // File menu
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
+        let fileMenuItem = NSMenuItem()
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
+
+        // Edit menu
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(NSMenuItem(title: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        let editMenuItem = NSMenuItem()
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        // Window menu
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(NSMenuItem(title: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m"))
+        windowMenu.addItem(NSMenuItem(title: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: ""))
+        windowMenu.addItem(NSMenuItem.separator())
+        windowMenu.addItem(NSMenuItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: ""))
+        let windowMenuItem = NSMenuItem()
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        NSApp.windowsMenu = windowMenu
+
+        // Help menu
+        let helpMenu = NSMenu(title: "Help")
+        let helpMenuItem = NSMenuItem()
+        helpMenuItem.submenu = helpMenu
+        mainMenu.addItem(helpMenuItem)
+        NSApp.helpMenu = helpMenu
+
+        NSApp.mainMenu = mainMenu
     }
 }
