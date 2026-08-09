@@ -20,8 +20,38 @@ enum CaffeineError: LocalizedError {
     }
 }
 
+// MARK: - Mode
+
+enum CaffeineMode: String, Codable, CaseIterable {
+    case preventSleep = "preventSleep"
+    case preventDisplaySleep = "preventDisplaySleep"
+
+    var label: String {
+        switch self {
+        case .preventSleep: return "Prevent Sleep"
+        case .preventDisplaySleep: return "Prevent Sleep + Lock"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .preventSleep: return "Mac won't sleep, but display can turn off & lock"
+        case .preventDisplaySleep: return "Mac won't sleep, display stays on (no lock)"
+        }
+    }
+
+    var assertionType: CFString {
+        switch self {
+        case .preventSleep:
+            return kIOPMAssertPreventUserIdleSystemSleep as CFString
+        case .preventDisplaySleep:
+            return kIOPMAssertPreventUserIdleDisplaySleep as CFString
+        }
+    }
+}
+
 /// Prevents system sleep (Caffeine-like functionality).
-/// State is persisted to settings.json so it restores on relaunch.
+/// State and mode are persisted to settings.json so they restore on relaunch.
 final class CaffeineManager: ObservableObject {
     static let shared = CaffeineManager()
 
@@ -29,20 +59,39 @@ final class CaffeineManager: ObservableObject {
     @Published private(set) var isActive: Bool = false
 
     private init() {
-        // Restore from settings
+        // Restore happens later via restoreState() called from AppDelegate
+        // to avoid circular dependency during singleton initialization
+    }
+
+    /// Restore caffeine state from settings. Must be called AFTER all
+    /// notification observers are set up and singletons are fully initialized.
+    func restoreState() {
         if SettingsManager.shared.stayAwake {
-            _ = activate()
+            guard !isActive else { return }
+            let mode = SettingsManager.shared.caffeineMode
+            let reason = "Rancage: Keeping system awake" as CFString
+            let result = IOPMAssertionCreateWithName(
+                mode.assertionType,
+                IOPMAssertionLevel(kIOPMAssertionLevelOn),
+                reason,
+                &assertionID
+            )
+            if result == kIOReturnSuccess {
+                isActive = true
+                // Don't notify here — caller will refresh UI after
+            }
         }
     }
 
-    /// Prevent system from sleeping
+    /// Prevent system from sleeping using the configured mode
     @discardableResult
     func activate() -> Result<Void, CaffeineError> {
         guard !isActive else { return .failure(.alreadyActive) }
 
+        let mode = SettingsManager.shared.caffeineMode
         let reason = "Rancage: Keeping system awake" as CFString
         let result = IOPMAssertionCreateWithName(
-            kIOPMAssertPreventUserIdleSystemSleep as CFString,
+            mode.assertionType,
             IOPMAssertionLevel(kIOPMAssertionLevelOn),
             reason,
             &assertionID
@@ -75,6 +124,14 @@ final class CaffeineManager: ObservableObject {
         return .success(())
     }
 
+    /// Release assertion without persisting state (used on app quit)
+    func releaseWithoutPersist() {
+        guard isActive else { return }
+        IOPMAssertionRelease(assertionID)
+        assertionID = 0
+        isActive = false
+    }
+
     /// Toggle sleep prevention state
     @discardableResult
     func toggle() -> Bool {
@@ -84,6 +141,13 @@ final class CaffeineManager: ObservableObject {
             _ = activate()
         }
         return isActive
+    }
+
+    /// Re-apply assertion with new mode (deactivate + activate)
+    func reapplyMode() {
+        guard isActive else { return }
+        _ = deactivate()
+        _ = activate()
     }
 
     private func notifyChanged() {

@@ -26,8 +26,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Warm up CPU delta
         _ = SystemMonitor.shared.cpuUsage()
 
-        // Restore caffeine state (triggers init which reads settings)
-        _ = CaffeineManager.shared
+        // Restore caffeine state (after everything is set up)
+        CaffeineManager.shared.restoreState()
 
         // Start periodic refresh
         updateReadings()
@@ -36,7 +36,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
-        _ = CaffeineManager.shared.deactivate()
+        CaffeineManager.shared.releaseWithoutPersist()
         HistoryStore.shared.save()
         SMCKit.shared.close()
     }

@@ -1,6 +1,6 @@
 #!/usr/bin/env swift
 // Generates a 1024x1024 app icon for Rancage
-// A modern gauge/dashboard icon with a temperature vibe
+// macOS icon with proper inset (~15% padding from edges)
 
 import AppKit
 import CoreGraphics
@@ -27,60 +27,55 @@ NSGraphicsContext.current = nsContext
 let cornerRadius: CGFloat = 220
 let bgPath = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
 
-// Gradient background: dark charcoal
 let bgGradient = NSGradient(
     starting: NSColor(red: 0.12, green: 0.13, blue: 0.16, alpha: 1.0),
-    ending: NSColor(red: 0.08, green: 0.09, blue: 0.11, alpha: 1.0)
+    ending: NSColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1.0)
 )!
 bgGradient.draw(in: bgPath, angle: -90)
 
-// Draw a gauge arc
-let center = NSPoint(x: 512, y: 470)
-let gaugeRadius: CGFloat = 300
+// === Content area: inset 15% from each side ===
+// This makes the icon visually match other macOS icons in size
+let inset: CGFloat = 150
+let contentCenter = NSPoint(x: 512, y: 520)
+let gaugeRadius: CGFloat = 230
 let startAngle: CGFloat = 210
 let endAngle: CGFloat = -30
-let lineWidth: CGFloat = 40
+let lineWidth: CGFloat = 34
+let totalArcAngle: CGFloat = 240
 
-// Background arc (dark)
+// Background arc (dark track)
 let bgArc = NSBezierPath()
-bgArc.appendArc(withCenter: center, radius: gaugeRadius, startAngle: startAngle, endAngle: endAngle, clockwise: true)
+bgArc.appendArc(withCenter: contentCenter, radius: gaugeRadius, startAngle: startAngle, endAngle: endAngle, clockwise: true)
 bgArc.lineWidth = lineWidth
 bgArc.lineCapStyle = .round
 NSColor(red: 0.2, green: 0.22, blue: 0.26, alpha: 1.0).setStroke()
 bgArc.stroke()
 
-// Colored arc (gradient-like: green -> orange -> red)
-// Draw as segments
-let totalArcAngle: CGFloat = 240 // from 210 to -30
+// Colored arc segments (green → cyan → warm)
 let segments = 60
 let segmentAngle = totalArcAngle / CGFloat(segments)
-let fillPercent: CGFloat = 0.7 // Show ~70% filled
+let fillPercent: CGFloat = 0.65
 
 for i in 0..<Int(CGFloat(segments) * fillPercent) {
     let t = CGFloat(i) / CGFloat(segments)
     let sAngle = startAngle - segmentAngle * CGFloat(i)
     let eAngle = sAngle - segmentAngle
 
-    // Color interpolation: green -> cyan -> blue
-    let r: CGFloat
-    let g: CGFloat
-    let b: CGFloat
+    let r: CGFloat, g: CGFloat, b: CGFloat
     if t < 0.5 {
-        // green to cyan
         let u = t * 2
-        r = 0.1 * (1 - u) + 0.1 * u
-        g = 0.85 * (1 - u) + 0.75 * u
-        b = 0.4 * (1 - u) + 0.95 * u
+        r = 0.15 * (1 - u) + 0.1 * u
+        g = 0.8 * (1 - u) + 0.75 * u
+        b = 0.4 * (1 - u) + 0.9 * u
     } else {
-        // cyan to orange/red
         let u = (t - 0.5) * 2
-        r = 0.1 * (1 - u) + 0.95 * u
-        g = 0.75 * (1 - u) + 0.4 * u
-        b = 0.95 * (1 - u) + 0.2 * u
+        r = 0.1 * (1 - u) + 0.3 * u
+        g = 0.75 * (1 - u) + 0.85 * u
+        b = 0.9 * (1 - u) + 0.95 * u
     }
 
     let segPath = NSBezierPath()
-    segPath.appendArc(withCenter: center, radius: gaugeRadius, startAngle: sAngle, endAngle: eAngle, clockwise: true)
+    segPath.appendArc(withCenter: contentCenter, radius: gaugeRadius, startAngle: sAngle, endAngle: eAngle, clockwise: true)
     segPath.lineWidth = lineWidth
     segPath.lineCapStyle = .butt
     NSColor(red: r, green: g, blue: b, alpha: 1.0).setStroke()
@@ -90,53 +85,53 @@ for i in 0..<Int(CGFloat(segments) * fillPercent) {
 // Needle
 let needleAngle: CGFloat = startAngle - totalArcAngle * fillPercent
 let needleRad = needleAngle * .pi / 180
-let needleLength: CGFloat = 200
+let needleLength: CGFloat = 160
 let needleTip = NSPoint(
-    x: center.x + needleLength * cos(needleRad),
-    y: center.y + needleLength * sin(needleRad)
+    x: contentCenter.x + needleLength * cos(needleRad),
+    y: contentCenter.y + needleLength * sin(needleRad)
 )
 
 let needlePath = NSBezierPath()
-needlePath.move(to: center)
+needlePath.move(to: contentCenter)
 needlePath.line(to: needleTip)
-needlePath.lineWidth = 8
+needlePath.lineWidth = 7
 needlePath.lineCapStyle = .round
 NSColor.white.setStroke()
 needlePath.stroke()
 
-// Center dot
-let dotSize: CGFloat = 20
-let dotRect = NSRect(x: center.x - dotSize/2, y: center.y - dotSize/2, width: dotSize, height: dotSize)
-let dotPath = NSBezierPath(ovalIn: dotRect)
+// Center hub
+let hubSize: CGFloat = 18
+let hubRect = NSRect(x: contentCenter.x - hubSize/2, y: contentCenter.y - hubSize/2, width: hubSize, height: hubSize)
 NSColor.white.setFill()
-dotPath.fill()
+NSBezierPath(ovalIn: hubRect).fill()
 
-// Small coffee cup indicator at bottom
-let cupCenter = NSPoint(x: 512, y: 200)
+// Coffee cup at bottom center (smaller, subtle)
+let cupCenter = NSPoint(x: 512, y: 260)
+let cupScale: CGFloat = 0.7
+
 let cupPath = NSBezierPath()
-// Simple cup shape
-cupPath.move(to: NSPoint(x: cupCenter.x - 30, y: cupCenter.y + 20))
-cupPath.line(to: NSPoint(x: cupCenter.x - 22, y: cupCenter.y - 20))
-cupPath.line(to: NSPoint(x: cupCenter.x + 22, y: cupCenter.y - 20))
-cupPath.line(to: NSPoint(x: cupCenter.x + 30, y: cupCenter.y + 20))
+cupPath.move(to: NSPoint(x: cupCenter.x - 22 * cupScale, y: cupCenter.y + 14 * cupScale))
+cupPath.line(to: NSPoint(x: cupCenter.x - 16 * cupScale, y: cupCenter.y - 14 * cupScale))
+cupPath.line(to: NSPoint(x: cupCenter.x + 16 * cupScale, y: cupCenter.y - 14 * cupScale))
+cupPath.line(to: NSPoint(x: cupCenter.x + 22 * cupScale, y: cupCenter.y + 14 * cupScale))
 cupPath.close()
-cupPath.lineWidth = 5
-NSColor(red: 0.95, green: 0.7, blue: 0.2, alpha: 0.8).setStroke()
+cupPath.lineWidth = 4
+NSColor(red: 0.95, green: 0.7, blue: 0.2, alpha: 0.7).setStroke()
 cupPath.stroke()
 
-// Steam lines
-for offset: CGFloat in [-10, 0, 10] {
-    let steamPath = NSBezierPath()
-    steamPath.move(to: NSPoint(x: cupCenter.x + offset, y: cupCenter.y + 24))
-    steamPath.curve(
-        to: NSPoint(x: cupCenter.x + offset, y: cupCenter.y + 55),
-        controlPoint1: NSPoint(x: cupCenter.x + offset + 8, y: cupCenter.y + 32),
-        controlPoint2: NSPoint(x: cupCenter.x + offset - 8, y: cupCenter.y + 47)
+// Steam
+for offset: CGFloat in [-7, 0, 7] {
+    let steam = NSBezierPath()
+    steam.move(to: NSPoint(x: cupCenter.x + offset, y: cupCenter.y + 16 * cupScale))
+    steam.curve(
+        to: NSPoint(x: cupCenter.x + offset, y: cupCenter.y + 42 * cupScale),
+        controlPoint1: NSPoint(x: cupCenter.x + offset + 5, y: cupCenter.y + 24 * cupScale),
+        controlPoint2: NSPoint(x: cupCenter.x + offset - 5, y: cupCenter.y + 34 * cupScale)
     )
-    steamPath.lineWidth = 3
-    steamPath.lineCapStyle = .round
-    NSColor(red: 0.95, green: 0.7, blue: 0.2, alpha: 0.5).setStroke()
-    steamPath.stroke()
+    steam.lineWidth = 2.5
+    steam.lineCapStyle = .round
+    NSColor(red: 0.95, green: 0.7, blue: 0.2, alpha: 0.4).setStroke()
+    steam.stroke()
 }
 
 NSGraphicsContext.current = nil

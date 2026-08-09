@@ -156,17 +156,33 @@ struct DashboardView: View {
 
                 // Caffeine Section
                 GroupBox {
-                    HStack {
-                        Image(systemName: caffeine.isActive ? "cup.and.saucer.fill" : "cup.and.saucer")
-                            .foregroundColor(caffeine.isActive ? .orange : .secondary)
-                        Text("Stay Awake")
-                            .font(.headline)
-                        Spacer()
-                        Toggle("", isOn: Binding(
-                            get: { caffeine.isActive },
-                            set: { _ in caffeine.toggle() }
-                        ))
-                        .toggleStyle(.switch)
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: caffeine.isActive ? "cup.and.saucer.fill" : "cup.and.saucer")
+                                .foregroundColor(caffeine.isActive ? .orange : .secondary)
+                            Text("Stay Awake")
+                                .font(.headline)
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { caffeine.isActive },
+                                set: { _ in caffeine.toggle() }
+                            ))
+                            .toggleStyle(.switch)
+                        }
+
+                        Picker("Mode", selection: Binding(
+                            get: { SettingsManager.shared.caffeineMode },
+                            set: { SettingsManager.shared.caffeineMode = $0 }
+                        )) {
+                            ForEach(CaffeineMode.allCases, id: \.self) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
+                        Text(SettingsManager.shared.caffeineMode.description)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                     .padding(4)
                 }

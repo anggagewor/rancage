@@ -32,6 +32,14 @@ final class SettingsManager: ObservableObject {
 
     // Stay Awake (Caffeine) — persisted so it restores on relaunch
     @Published var stayAwake: Bool = false { didSet { save() } }
+    @Published var caffeineMode: CaffeineMode = .preventSleep {
+        didSet {
+            save()
+            if !isLoading {
+                CaffeineManager.shared.reapplyMode()
+            }
+        }
+    }
 
     // Alerts
     @Published var alertsEnabled: Bool = true { didSet { save() } }
@@ -71,6 +79,7 @@ final class SettingsManager: ObservableObject {
         var showDockIcon: Bool?
         var refreshInterval: Double?
         var stayAwake: Bool?
+        var caffeineMode: CaffeineMode?
         var alertsEnabled: Bool?
         var tempAlertThreshold: Double?
         var ramAlertThreshold: Double?
@@ -92,6 +101,7 @@ final class SettingsManager: ObservableObject {
             if let v = decoded.showDockIcon { showDockIcon = v }
             if let v = decoded.refreshInterval { refreshInterval = v }
             if let v = decoded.stayAwake { stayAwake = v }
+            if let v = decoded.caffeineMode { caffeineMode = v }
             if let v = decoded.alertsEnabled { alertsEnabled = v }
             if let v = decoded.tempAlertThreshold { tempAlertThreshold = v }
             if let v = decoded.ramAlertThreshold { ramAlertThreshold = v }
@@ -112,6 +122,7 @@ final class SettingsManager: ObservableObject {
             showDockIcon: showDockIcon,
             refreshInterval: refreshInterval,
             stayAwake: stayAwake,
+            caffeineMode: caffeineMode,
             alertsEnabled: alertsEnabled,
             tempAlertThreshold: tempAlertThreshold,
             ramAlertThreshold: ramAlertThreshold
