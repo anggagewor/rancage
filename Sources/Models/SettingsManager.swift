@@ -7,6 +7,7 @@ final class SettingsManager: ObservableObject {
 
     private let configDir: URL
     private let configFile: URL
+    private var isLoading = false
 
     // Menu bar display
     @Published var showCPUInMenuBar: Bool = true { didSet { save() } }
@@ -31,6 +32,11 @@ final class SettingsManager: ObservableObject {
 
     // Stay Awake (Caffeine) — persisted so it restores on relaunch
     @Published var stayAwake: Bool = false { didSet { save() } }
+
+    // Alerts
+    @Published var alertsEnabled: Bool = true { didSet { save() } }
+    @Published var tempAlertThreshold: Double = 90 { didSet { save() } }
+    @Published var ramAlertThreshold: Double = 90 { didSet { save() } }
 
     enum MenuBarStyle: String, Codable, CaseIterable {
         case icon = "icon"
@@ -65,10 +71,15 @@ final class SettingsManager: ObservableObject {
         var showDockIcon: Bool?
         var refreshInterval: Double?
         var stayAwake: Bool?
+        var alertsEnabled: Bool?
+        var tempAlertThreshold: Double?
+        var ramAlertThreshold: Double?
     }
 
     private func load() {
         guard FileManager.default.fileExists(atPath: configFile.path) else { return }
+        isLoading = true
+        defer { isLoading = false }
         do {
             let data = try Data(contentsOf: configFile)
             let decoded = try JSONDecoder().decode(SettingsData.self, from: data)
@@ -81,12 +92,16 @@ final class SettingsManager: ObservableObject {
             if let v = decoded.showDockIcon { showDockIcon = v }
             if let v = decoded.refreshInterval { refreshInterval = v }
             if let v = decoded.stayAwake { stayAwake = v }
+            if let v = decoded.alertsEnabled { alertsEnabled = v }
+            if let v = decoded.tempAlertThreshold { tempAlertThreshold = v }
+            if let v = decoded.ramAlertThreshold { ramAlertThreshold = v }
         } catch {
             print("⚠️  Failed to load settings: \(error)")
         }
     }
 
     func save() {
+        guard !isLoading else { return }
         let settingsData = SettingsData(
             showCPUInMenuBar: showCPUInMenuBar,
             showCPUTempInMenuBar: showCPUTempInMenuBar,
@@ -96,7 +111,10 @@ final class SettingsManager: ObservableObject {
             menuBarStyle: menuBarStyle,
             showDockIcon: showDockIcon,
             refreshInterval: refreshInterval,
-            stayAwake: stayAwake
+            stayAwake: stayAwake,
+            alertsEnabled: alertsEnabled,
+            tempAlertThreshold: tempAlertThreshold,
+            ramAlertThreshold: ramAlertThreshold
         )
         do {
             try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)

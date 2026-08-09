@@ -152,6 +152,20 @@ final class SMCKit {
         return Int(data.bytes.0)
     }
 
+    func readFanMin(_ fanIndex: Int) throws -> Double {
+        let key = String(format: "F%dMn", fanIndex)
+        let data = try readKey(key)
+        let rawValue = (UInt16(data.bytes.0) << 8) | UInt16(data.bytes.1)
+        return Double(rawValue) / 4.0
+    }
+
+    func readFanMax(_ fanIndex: Int) throws -> Double {
+        let key = String(format: "F%dMx", fanIndex)
+        let data = try readKey(key)
+        let rawValue = (UInt16(data.bytes.0) << 8) | UInt16(data.bytes.1)
+        return Double(rawValue) / 4.0
+    }
+
     // MARK: - Helpers
 
     private func fourCharCode(_ str: String) -> UInt32 {

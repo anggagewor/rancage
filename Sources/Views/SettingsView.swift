@@ -30,6 +30,50 @@ struct SettingsView: View {
                     .padding(4)
                 }
 
+                // Alerts Section
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Alerts", systemImage: "bell")
+                            .font(.headline)
+
+                        Toggle("Enable Notifications", isOn: $settings.alertsEnabled)
+
+                        if settings.alertsEnabled {
+                            HStack {
+                                Text("Temperature Threshold")
+                                Spacer()
+                                Picker("", selection: $settings.tempAlertThreshold) {
+                                    Text("80°C").tag(80.0)
+                                    Text("85°C").tag(85.0)
+                                    Text("90°C").tag(90.0)
+                                    Text("95°C").tag(95.0)
+                                    Text("100°C").tag(100.0)
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(maxWidth: 280)
+                            }
+
+                            HStack {
+                                Text("RAM Threshold")
+                                Spacer()
+                                Picker("", selection: $settings.ramAlertThreshold) {
+                                    Text("80%").tag(80.0)
+                                    Text("85%").tag(85.0)
+                                    Text("90%").tag(90.0)
+                                    Text("95%").tag(95.0)
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(maxWidth: 220)
+                            }
+
+                            Text("Notifications are throttled to max 1 per minute.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(4)
+                }
+
                 // General Section
                 GroupBox {
                     VStack(alignment: .leading, spacing: 12) {
@@ -50,14 +94,13 @@ struct SettingsView: View {
                             .frame(maxWidth: 250)
                         }
                         .onChange(of: settings.refreshInterval) { _, _ in
-                            // Notify app delegate to restart timer
                             NotificationCenter.default.post(name: .refreshIntervalChanged, object: nil)
                         }
 
                         Divider()
 
                         Toggle("Show Dock Icon", isOn: $settings.showDockIcon)
-                            .help("When disabled, Rancage only appears in the menu bar. Open via menu bar → 'Open Rancage…'")
+                            .help("When disabled, Rancage only appears in the menu bar")
                     }
                     .padding(4)
                 }

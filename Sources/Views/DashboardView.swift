@@ -30,26 +30,52 @@ struct DashboardView: View {
                             maxValue: 100
                         )
                         .frame(height: 60)
+                    }
+                    .padding(4)
+                }
 
-                        if state.cpuTemp > 0 {
+                // Temperature Section (CPU + GPU)
+                if state.cpuTemp > 0 || state.gpuTemp > 0 {
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 8) {
                             HStack {
                                 Image(systemName: "thermometer.medium")
-                                    .foregroundColor(tempColor(state.cpuTemp))
+                                    .foregroundColor(tempColor(max(state.cpuTemp, state.gpuTemp)))
                                 Text("Temperature")
+                                    .font(.headline)
                                 Spacer()
-                                Text(String(format: "%.1f°C", state.cpuTemp))
-                                    .font(.body.monospacedDigit())
-                                    .foregroundColor(tempColor(state.cpuTemp))
                             }
+
+                            if state.cpuTemp > 0 {
+                                HStack {
+                                    Text("CPU")
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text(String(format: "%.1f°C", state.cpuTemp))
+                                        .font(.body.monospacedDigit())
+                                        .foregroundColor(tempColor(state.cpuTemp))
+                                }
+                            }
+                            if state.gpuTemp > 0 {
+                                HStack {
+                                    Text("GPU")
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text(String(format: "%.1f°C", state.gpuTemp))
+                                        .font(.body.monospacedDigit())
+                                        .foregroundColor(tempColor(state.gpuTemp))
+                                }
+                            }
+
                             MiniGraphView(
                                 data: history.cpuTempHistory.map(\.value),
                                 color: tempColor(state.cpuTemp),
                                 maxValue: 105
                             )
-                            .frame(height: 40)
+                            .frame(height: 50)
                         }
+                        .padding(4)
                     }
-                    .padding(4)
                 }
 
                 // Memory Section
@@ -94,12 +120,27 @@ struct DashboardView: View {
                                 Spacer()
                             }
                             ForEach(Array(state.fanSpeeds.enumerated()), id: \.offset) { _, fan in
-                                HStack {
-                                    let label = state.fanSpeeds.count == 1 ? "Fan" : "Fan \(fan.index)"
-                                    Text(label)
-                                    Spacer()
-                                    Text(String(format: "%.0f RPM", fan.rpm))
-                                        .font(.body.monospacedDigit())
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack {
+                                        let label = state.fanSpeeds.count == 1 ? "Fan" : "Fan \(fan.index)"
+                                        Text(label)
+                                        Spacer()
+                                        Text(String(format: "%.0f RPM", fan.rpm))
+                                            .font(.body.monospacedDigit())
+                                    }
+                                    if fan.max > 0 {
+                                        ProgressView(value: fan.rpm, total: fan.max)
+                                            .tint(.orange)
+                                        HStack {
+                                            Text(String(format: "Min: %.0f", fan.min))
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                            Spacer()
+                                            Text(String(format: "Max: %.0f", fan.max))
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
                                 }
                             }
                             MiniGraphView(
