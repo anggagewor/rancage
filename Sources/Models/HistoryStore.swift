@@ -1,13 +1,17 @@
 import Foundation
 
 /// Stores historical data points for graphs.
-/// Persisted to ~/.cache/rancage/history.json on quit, loaded on launch.
+/// Persisted to ~/.cache/rancage/history.json periodically and on quit.
 final class HistoryStore: ObservableObject {
     static let shared = HistoryStore()
 
     private let cacheDir: URL
     private let cacheFile: URL
     private let maxPoints = 300 // ~5 min at 1s interval
+
+    /// Auto-save every 60 seconds to prevent data loss on crash
+    private var saveCounter = 0
+    private let saveInterval = 60
 
     @Published var cpuHistory: [DataPoint] = []
     @Published var cpuTempHistory: [DataPoint] = []
@@ -39,11 +43,18 @@ final class HistoryStore: ObservableObject {
         ramHistory.append(DataPoint(value: ram))
         fanHistory.append(DataPoint(value: fanRPM))
 
-        // Trim to max size
-        if cpuHistory.count > maxPoints { cpuHistory.removeFirst(cpuHistory.count - maxPoints) }
-        if cpuTempHistory.count > maxPoints { cpuTempHistory.removeFirst(cpuTempHistory.count - maxPoints) }
-        if ramHistory.count > maxPoints { ramHistory.removeFirst(ramHistory.count - maxPoints) }
-        if fanHistory.count > maxPoints { fanHistory.removeFirst(fanHistory.count - maxPoints) }
+        // Trim using suffix for better performance than removeFirst
+        if cpuHistory.count > maxPoints { cpuHistory = Array(cpuHistory.suffix(maxPoints)) }
+        if cpuTempHistory.count > maxPoints { cpuTempHistory = Array(cpuTempHistory.suffix(maxPoints)) }
+        if ramHistory.count > maxPoints { ramHistory = Array(ramHistory.suffix(maxPoints)) }
+        if fanHistory.count > maxPoints { fanHistory = Array(fanHistory.suffix(maxPoints)) }
+
+        // Periodic background save to reduce data loss on crash
+        saveCounter += 1
+        if saveCounter >= saveInterval {
+            saveCounter = 0
+            saveInBackground()
+        }
     }
 
     // MARK: - Persistence
@@ -55,13 +66,37 @@ final class HistoryStore: ObservableObject {
         var fanHistory: [DataPoint]
     }
 
+    /// Save synchronously (called on app quit)
     func save() {
+        performSave()
+    }
+
+    /// Save on background queue (called periodically)
+    private func saveInBackground() {
         let cacheData = CacheData(
             cpuHistory: cpuHistory,
             cpuTempHistory: cpuTempHistory,
             ramHistory: ramHistory,
             fanHistory: fanHistory
         )
+        let dir = cacheDir
+        let file = cacheFile
+        DispatchQueue.global(qos: .utility).async {
+            Self.writeToDisk(cacheData: cacheData, cacheDir: dir, cacheFile: file)
+        }
+    }
+
+    private func performSave() {
+        let cacheData = CacheData(
+            cpuHistory: cpuHistory,
+            cpuTempHistory: cpuTempHistory,
+            ramHistory: ramHistory,
+            fanHistory: fanHistory
+        )
+        Self.writeToDisk(cacheData: cacheData, cacheDir: cacheDir, cacheFile: cacheFile)
+    }
+
+    private static func writeToDisk(cacheData: CacheData, cacheDir: URL, cacheFile: URL) {
         do {
             try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
             let encoder = JSONEncoder()

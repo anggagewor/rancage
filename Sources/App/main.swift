@@ -18,8 +18,8 @@ NotificationCenter.default.addObserver(
     forName: .refreshIntervalChanged,
     object: nil,
     queue: .main
-) { _ in
-    delegate.restartTimer()
+) { [weak delegate] _ in
+    delegate?.restartTimer()
 }
 
 // Listen for caffeine state changes → immediately update menu bar
@@ -27,8 +27,8 @@ NotificationCenter.default.addObserver(
     forName: .caffeineStateChanged,
     object: nil,
     queue: .main
-) { _ in
-    delegate.refreshMenuBar()
+) { [weak delegate] _ in
+    delegate?.refreshMenuBar()
 }
 
 app.run()

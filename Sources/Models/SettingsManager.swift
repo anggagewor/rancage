@@ -9,32 +9,46 @@ final class SettingsManager: ObservableObject {
     private let configFile: URL
     private var isLoading = false
 
+    /// Background queue for debounced saves
+    private let saveQueue = DispatchQueue(label: "com.rancage.settings.save", qos: .utility)
+    private var saveWorkItem: DispatchWorkItem?
+
     // Menu bar display
-    @Published var showCPUInMenuBar: Bool = true { didSet { save() } }
-    @Published var showCPUTempInMenuBar: Bool = true { didSet { save() } }
-    @Published var showRAMInMenuBar: Bool = true { didSet { save() } }
-    @Published var showFanInMenuBar: Bool = true { didSet { save() } }
-    @Published var showCaffeineInMenuBar: Bool = true { didSet { save() } }
+    @Published var showCPUInMenuBar: Bool = true { didSet { scheduleSave() } }
+    @Published var showCPUTempInMenuBar: Bool = true { didSet { scheduleSave() } }
+    @Published var showRAMInMenuBar: Bool = true { didSet { scheduleSave() } }
+    @Published var showFanInMenuBar: Bool = true { didSet { scheduleSave() } }
+    @Published var showCaffeineInMenuBar: Bool = true { didSet { scheduleSave() } }
 
     // Menu bar style: "icon", "text", "both"
-    @Published var menuBarStyle: MenuBarStyle = .both { didSet { save() } }
+    @Published var menuBarStyle: MenuBarStyle = .both { didSet { scheduleSave() } }
 
     // Appearance
     @Published var showDockIcon: Bool = false {
         didSet {
-            save()
+            scheduleSave()
             applyDockIconPolicy()
         }
     }
 
     // Refresh interval in seconds
-    @Published var refreshInterval: Double = 1.0 { didSet { save() } }
+    @Published var refreshInterval: Double = 1.0 {
+        didSet {
+            // Clamp to sane range
+            let clamped = max(0.5, min(30.0, refreshInterval))
+            if refreshInterval != clamped {
+                refreshInterval = clamped
+                return
+            }
+            scheduleSave()
+        }
+    }
 
     // Stay Awake (Caffeine) — persisted so it restores on relaunch
-    @Published var stayAwake: Bool = false { didSet { save() } }
+    @Published var stayAwake: Bool = false { didSet { scheduleSave() } }
     @Published var caffeineMode: CaffeineMode = .preventSleep {
         didSet {
-            save()
+            scheduleSave()
             if !isLoading {
                 CaffeineManager.shared.reapplyMode()
             }
@@ -42,9 +56,9 @@ final class SettingsManager: ObservableObject {
     }
 
     // Alerts
-    @Published var alertsEnabled: Bool = true { didSet { save() } }
-    @Published var tempAlertThreshold: Double = 90 { didSet { save() } }
-    @Published var ramAlertThreshold: Double = 90 { didSet { save() } }
+    @Published var alertsEnabled: Bool = true { didSet { scheduleSave() } }
+    @Published var tempAlertThreshold: Double = 90 { didSet { scheduleSave() } }
+    @Published var ramAlertThreshold: Double = 90 { didSet { scheduleSave() } }
 
     enum MenuBarStyle: String, Codable, CaseIterable {
         case icon = "icon"
@@ -99,7 +113,7 @@ final class SettingsManager: ObservableObject {
             if let v = decoded.showCaffeineInMenuBar { showCaffeineInMenuBar = v }
             if let v = decoded.menuBarStyle { menuBarStyle = v }
             if let v = decoded.showDockIcon { showDockIcon = v }
-            if let v = decoded.refreshInterval { refreshInterval = v }
+            if let v = decoded.refreshInterval { refreshInterval = max(0.5, min(30.0, v)) }
             if let v = decoded.stayAwake { stayAwake = v }
             if let v = decoded.caffeineMode { caffeineMode = v }
             if let v = decoded.alertsEnabled { alertsEnabled = v }
@@ -110,8 +124,24 @@ final class SettingsManager: ObservableObject {
         }
     }
 
-    func save() {
+    /// Debounced save: coalesces rapid changes into a single disk write.
+    private func scheduleSave() {
         guard !isLoading else { return }
+        saveWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.performSave()
+        }
+        saveWorkItem = workItem
+        saveQueue.asyncAfter(deadline: .now() + 0.3, execute: workItem)
+    }
+
+    /// Immediate save — called on app quit to flush pending changes.
+    func save() {
+        saveWorkItem?.cancel()
+        performSave()
+    }
+
+    private func performSave() {
         let settingsData = SettingsData(
             showCPUInMenuBar: showCPUInMenuBar,
             showCPUTempInMenuBar: showCPUTempInMenuBar,
@@ -133,6 +163,12 @@ final class SettingsManager: ObservableObject {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(settingsData)
             try data.write(to: configFile, options: .atomic)
+
+            // Restrict file permissions to owner only (0600)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: configFile.path
+            )
         } catch {
             print("⚠️  Failed to save settings: \(error)")
         }

@@ -19,14 +19,36 @@ final class MonitorState: ObservableObject {
     private let pollQueue = DispatchQueue(label: "com.rancage.monitor", qos: .userInitiated)
     private var lastAlertTime: Date = .distantPast
 
+    /// Guard against overlapping refreshes
+    private var isRefreshing = false
+
+    /// Whether notification authorization has been requested
+    private var notificationAuthorized: Bool?
+
     private init() {
         smcAvailable = SMCKit.shared.isOpen
+        requestNotificationAuth()
+    }
+
+    /// Request notification authorization once at init
+    private func requestNotificationAuth() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
+            DispatchQueue.main.async {
+                self?.notificationAuthorized = granted
+            }
+        }
     }
 
     /// Refresh all readings. Polling happens on background queue,
     /// results are dispatched back to main thread for UI updates.
+    /// Prevents overlapping refreshes.
     func refresh() {
-        pollQueue.async { [self] in
+        guard !isRefreshing else { return }
+        isRefreshing = true
+
+        pollQueue.async { [weak self] in
+            guard let self = self else { return }
+
             let cpu = SystemMonitor.shared.cpuUsage()
             let mem = SystemMonitor.shared.memoryUsage()
 
@@ -67,7 +89,10 @@ final class MonitorState: ObservableObject {
 
             let fanRPM = fans.first?.rpm ?? 0
 
-            DispatchQueue.main.async { [self] in
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.isRefreshing = false
+
                 self.cpuPercent = cpu
                 self.memPercent = mem.percentage
                 self.memUsedGB = mem.usedGB
@@ -90,6 +115,7 @@ final class MonitorState: ObservableObject {
     private func checkAlerts(cpuTemp: Double, gpuTemp: Double, ramPercent: Double) {
         let settings = SettingsManager.shared
         guard settings.alertsEnabled else { return }
+        guard notificationAuthorized == true else { return }
 
         // Throttle: max 1 alert per 60 seconds
         guard Date().timeIntervalSince(lastAlertTime) > 60 else { return }
@@ -117,20 +143,16 @@ final class MonitorState: ObservableObject {
     }
 
     private func sendNotification(title: String, body: String) {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-            guard granted else { return }
-            let content = UNMutableNotificationContent()
-            content.title = title
-            content.body = body
-            content.sound = .default
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
 
-            let request = UNNotificationRequest(
-                identifier: "rancage-alert-\(UUID().uuidString)",
-                content: content,
-                trigger: nil
-            )
-            center.add(request)
-        }
+        let request = UNNotificationRequest(
+            identifier: "rancage-alert-\(UUID().uuidString)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
     }
 }

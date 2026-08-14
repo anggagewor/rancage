@@ -7,7 +7,12 @@ final class SystemMonitor {
 
     private var previousCPUInfo: host_cpu_load_info?
 
-    private init() {}
+    /// Cached host port — avoids leaking a new send right on every call.
+    private let hostPort: mach_port_t
+
+    private init() {
+        hostPort = mach_host_self()
+    }
 
     // MARK: - CPU Usage
 
@@ -20,7 +25,7 @@ final class SystemMonitor {
         let result = withUnsafeMutablePointer(to: &cpuInfo) { ptr in
             ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
                 host_statistics(
-                    mach_host_self(),
+                    hostPort,
                     HOST_CPU_LOAD_INFO,
                     intPtr,
                     &count
@@ -82,7 +87,7 @@ final class SystemMonitor {
         let result = withUnsafeMutablePointer(to: &stats) { ptr in
             ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
                 host_statistics64(
-                    mach_host_self(),
+                    hostPort,
                     HOST_VM_INFO64,
                     intPtr,
                     &count

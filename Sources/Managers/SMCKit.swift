@@ -59,36 +59,47 @@ final class SMCKit {
     private var connection: io_connect_t = 0
     private(set) var isOpen = false
 
+    /// Serial queue to guarantee thread-safe access to the SMC connection.
+    private let queue = DispatchQueue(label: "com.rancage.smc", qos: .userInitiated)
+
     private init() {}
 
     func open() throws {
-        let service = IOServiceGetMatchingService(
-            kIOMainPortDefault,
-            IOServiceMatching("AppleSMC")
-        )
-        guard service != 0 else {
-            throw SMCError.driverNotFound
-        }
+        try queue.sync {
+            guard !isOpen else { return }
 
-        let result = IOServiceOpen(service, mach_task_self_, 0, &connection)
-        IOObjectRelease(service)
+            let service = IOServiceGetMatchingService(
+                kIOMainPortDefault,
+                IOServiceMatching("AppleSMC")
+            )
+            guard service != 0 else {
+                throw SMCError.driverNotFound
+            }
 
-        guard result == kIOReturnSuccess else {
-            throw SMCError.failedToOpen
+            let result = IOServiceOpen(service, mach_task_self_, 0, &connection)
+            IOObjectRelease(service)
+
+            guard result == kIOReturnSuccess else {
+                throw SMCError.failedToOpen
+            }
+            isOpen = true
         }
-        isOpen = true
     }
 
     func close() {
-        if isOpen {
-            IOServiceClose(connection)
-            isOpen = false
+        queue.sync {
+            if isOpen {
+                IOServiceClose(connection)
+                connection = 0
+                isOpen = false
+            }
         }
     }
 
     // MARK: - Core Read
 
     private func callSMC(inputStruct: inout SMCKeyData) throws -> SMCKeyData {
+        // Caller must already be on `queue`
         guard isOpen else { throw SMCError.failedToOpen }
 
         var outputStruct = SMCKeyData()
@@ -110,21 +121,23 @@ final class SMCKit {
     }
 
     func readKey(_ key: String) throws -> SMCKeyData {
-        var input = SMCKeyData()
+        try queue.sync {
+            var input = SMCKeyData()
 
-        // Step 1: Get key info (data size + type)
-        input.key = fourCharCode(key)
-        input.data8 = kSMCGetKeyInfo
+            // Step 1: Get key info (data size + type)
+            input.key = fourCharCode(key)
+            input.data8 = kSMCGetKeyInfo
 
-        let info = try callSMC(inputStruct: &input)
+            let info = try callSMC(inputStruct: &input)
 
-        // Step 2: Read the value
-        input = SMCKeyData()
-        input.key = fourCharCode(key)
-        input.keyInfo.dataSize = info.keyInfo.dataSize
-        input.data8 = kSMCReadKey
+            // Step 2: Read the value
+            input = SMCKeyData()
+            input.key = fourCharCode(key)
+            input.keyInfo.dataSize = info.keyInfo.dataSize
+            input.data8 = kSMCReadKey
 
-        return try callSMC(inputStruct: &input)
+            return try callSMC(inputStruct: &input)
+        }
     }
 
     // MARK: - Temperature (sp78: signed 7.8 fixed point)
@@ -141,6 +154,9 @@ final class SMCKit {
     // MARK: - Fan Speed (fpe2: unsigned 14.2 fixed point)
 
     func readFanSpeed(_ fanIndex: Int) throws -> Double {
+        guard fanIndex >= 0 && fanIndex < 16 else {
+            throw SMCError.readFailed("Invalid fan index: \(fanIndex)")
+        }
         let key = String(format: "F%dAc", fanIndex)
         let data = try readKey(key)
         let rawValue = (UInt16(data.bytes.0) << 8) | UInt16(data.bytes.1)
@@ -149,10 +165,16 @@ final class SMCKit {
 
     func readFanCount() throws -> Int {
         let data = try readKey("FNum")
-        return Int(data.bytes.0)
+        let count = Int(data.bytes.0)
+        // Sanity: no Mac has more than 8 fans
+        guard count >= 0 && count <= 8 else { return 0 }
+        return count
     }
 
     func readFanMin(_ fanIndex: Int) throws -> Double {
+        guard fanIndex >= 0 && fanIndex < 16 else {
+            throw SMCError.readFailed("Invalid fan index: \(fanIndex)")
+        }
         let key = String(format: "F%dMn", fanIndex)
         let data = try readKey(key)
         let rawValue = (UInt16(data.bytes.0) << 8) | UInt16(data.bytes.1)
@@ -160,6 +182,9 @@ final class SMCKit {
     }
 
     func readFanMax(_ fanIndex: Int) throws -> Double {
+        guard fanIndex >= 0 && fanIndex < 16 else {
+            throw SMCError.readFailed("Invalid fan index: \(fanIndex)")
+        }
         let key = String(format: "F%dMx", fanIndex)
         let data = try readKey(key)
         let rawValue = (UInt16(data.bytes.0) << 8) | UInt16(data.bytes.1)

@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var timer: Timer?
     private var mainWindow: NSWindow?
@@ -23,6 +23,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Create status bar item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
+        // Use a lazy menu that rebuilds on open via NSMenuDelegate
+        let menu = NSMenu()
+        menu.delegate = self
+        statusItem.menu = menu
+
         // Warm up CPU delta
         _ = SystemMonitor.shared.cpuUsage()
 
@@ -38,6 +43,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         timer?.invalidate()
         CaffeineManager.shared.releaseWithoutPersist()
         HistoryStore.shared.save()
+        SettingsManager.shared.save()
         SMCKit.shared.close()
     }
 
@@ -53,6 +59,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
         return false
+    }
+
+    // MARK: - NSMenuDelegate
+
+    /// Build menu content on-demand when user clicks the status item.
+    /// This avoids rebuilding the entire menu every refresh tick.
+    func menuWillOpen(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let built = menuBuilder.build()
+        // Transfer items from built menu to our persistent menu
+        while let item = built.item(at: 0) {
+            built.removeItem(item)
+            menu.addItem(item)
+        }
     }
 
     // MARK: - Timer
@@ -71,17 +91,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func refreshMenuBar() {
         updateStatusBar()
-        statusItem.menu = menuBuilder.build()
     }
 
     // MARK: - Update Loop
 
     private func updateReadings() {
         MonitorState.shared.refresh()
-        // Give background queue a moment, then update UI
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+        // MonitorState dispatches to main when done; update status bar icon on next run loop
+        DispatchQueue.main.async { [weak self] in
             self?.updateStatusBar()
-            self?.statusItem.menu = self?.menuBuilder.build()
         }
     }
 
