@@ -43,7 +43,10 @@ final class MenuBarRenderer {
         guard !parts.isEmpty else { return nil }
 
         let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white
+        ]
         let height: CGFloat = 18
 
         // Calculate total width
@@ -85,7 +88,7 @@ final class MenuBarRenderer {
             return true
         }
 
-        img.isTemplate = true
+        img.isTemplate = false
         return img
     }
 

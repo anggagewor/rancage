@@ -5,6 +5,14 @@ struct DashboardView: View {
     @ObservedObject private var history = HistoryStore.shared
     @ObservedObject private var caffeine = CaffeineManager.shared
 
+    /// Convert MenuBarIcon to SwiftUI Image
+    private func iconImage(_ icon: MenuBarIcon, size: CGFloat = 18) -> some View {
+        Image(nsImage: icon.image)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: size, height: size)
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -12,8 +20,7 @@ struct DashboardView: View {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Image(systemName: "cpu")
-                                .foregroundColor(.blue)
+                            iconImage(.cpu)
                             Text("CPU")
                                 .font(.headline)
                             Spacer()
@@ -39,8 +46,7 @@ struct DashboardView: View {
                     GroupBox {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Image(systemName: "thermometer.medium")
-                                    .foregroundColor(tempColor(max(state.cpuTemp, state.gpuTemp)))
+                                iconImage(.thermometer)
                                 Text("Temperature")
                                     .font(.headline)
                                 Spacer()
@@ -82,8 +88,7 @@ struct DashboardView: View {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Image(systemName: "memorychip")
-                                .foregroundColor(.green)
+                            iconImage(.memory)
                             Text("Memory")
                                 .font(.headline)
                             Spacer()
@@ -113,8 +118,7 @@ struct DashboardView: View {
                     GroupBox {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Image(systemName: "fan")
-                                    .foregroundColor(.orange)
+                                iconImage(.fan)
                                 Text("Fans")
                                     .font(.headline)
                                 Spacer()
@@ -158,8 +162,7 @@ struct DashboardView: View {
                 GroupBox {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Image(systemName: caffeine.isActive ? "cup.and.saucer.fill" : "cup.and.saucer")
-                                .foregroundColor(caffeine.isActive ? .orange : .secondary)
+                            iconImage(caffeine.isActive ? .caffeine : .caffeineOff)
                             Text("Stay Awake")
                                 .font(.headline)
                             Spacer()

@@ -83,6 +83,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDele
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.updateReadings()
         }
+        // Keep timer firing while menu is open (event tracking mode)
+        RunLoop.main.add(timer!, forMode: .common)
     }
 
     func restartTimer() {

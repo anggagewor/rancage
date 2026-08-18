@@ -10,6 +10,9 @@ let package = Package(
         .executableTarget(
             name: "Rancage",
             path: "Sources",
+            resources: [
+                .copy("Resources")
+            ],
             linkerSettings: [
                 .linkedFramework("IOKit"),
                 .linkedFramework("AppKit"),

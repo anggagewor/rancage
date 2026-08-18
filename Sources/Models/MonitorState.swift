@@ -30,8 +30,14 @@ final class MonitorState: ObservableObject {
         requestNotificationAuth()
     }
 
-    /// Request notification authorization once at init
+    /// Request notification authorization once at init.
+    /// Guarded: UNUserNotificationCenter crashes when the app lacks a bundle identifier
+    /// (e.g. running via `swift run` without a .app wrapper).
     private func requestNotificationAuth() {
+        guard Bundle.main.bundleIdentifier != nil else {
+            notificationAuthorized = false
+            return
+        }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
             DispatchQueue.main.async {
                 self?.notificationAuthorized = granted
@@ -143,6 +149,8 @@ final class MonitorState: ObservableObject {
     }
 
     private func sendNotification(title: String, body: String) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
